@@ -1,0 +1,137 @@
+---
+title: "Fitness Quality Prediction"
+author: "Lance Dooley"
+date: "2/07/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+**Executive Summary: Machine Learning Algorithms for Fitness Quality Prediciton**   
+This presentation will show how an appropriate Machine Learning Algorithm is trained on physical fitness data to predict the quality of the physical exercises. Three Machine Learning Algorithms were used to predict the outcome of classe for our data: Recursive Partitioning and Regression Trees, Random Forest, and Support Vector Machine.   
+Ultimately, I chose model created by **Random Forest** which produced an accurracy of **99.7%** and an out of sample error rate of: 1 - 0.997 = **.003** which is 0.3%   
+
+**Background**   
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit, it is now possible to collect a large amount of data about personal activity relatively inexpensively.   
+This report uses data from accelerometers on the belt, forearm, arm, and dumbbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways and the classe of quality is the output we want to predict. Below, I walk through my process of acquiring the data, cleaning the data, and training models, and then show proof of my final choice, followed by plots of each type of fitted model.
+
+**Load the Required Libraries**   
+```{r Load Libraries, eval=TRUE, echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+# Load the required libraries
+require(tidyverse); require(caret); require(rpart); require(randomForest); require(e1071); require(rattle)
+```
+
+**Read the Raw Data and Clean It**   
+```{r Read and Clean Data, eval=TRUE, echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+# Get the raw data
+pml_training <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
+pml_testing  <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
+
+# Convert classe into factor
+pml_training$classe <- as.factor(pml_training$classe)
+levels(pml_training$classe)
+
+# Exploration of columns in pml_training, shows many NA/empty or DIV/0! NA values.
+# Remove all columns with  NA or empty or DIV/0! values.
+not_any_na_empty_div0 <- function(x) { !any( { is.na(x) | x=="" | x== "#DIV/0!"} ) }
+pml_training = pml_training[, apply( pml_training, 2, not_any_na_empty_div0 )]
+pml_testing  = pml_testing[,  apply( pml_testing,  2, not_any_na_empty_div0 )]
+
+# Remove these 5 columns in each data frame because they are not suitable predictors
+not_needed <- c("X",  "user_name", "raw_timestamp_part_1", "raw_timestamp_part_2", 
+                "cvtd_timestamp", "new_window", "num_window")  
+pml_training <- pml_training %>% dplyr::select(-not_needed )
+pml_testing  <- pml_testing  %>% dplyr::select(-not_needed )
+```
+
+**Split the Training Set into Pure Training and Validation Training**     
+```{r Split Training Set, eval=TRUE, echo=TRUE, cache=TRUE}
+set.seed(33833)
+inTrain <-   caret::createDataPartition(y=pml_training$classe, p=0.75, list = FALSE)
+pml_training_train    <- pml_training[inTrain,]
+pml_training_validate <- pml_training[-inTrain,]
+# Double check that the length of train and validate datasets = 19622
+nrow(pml_training_train); nrow(pml_training_validate)
+```
+
+**Train Fitted Models with 3 Different Machine Learning Algorithms**   
+```{r Train Fitted Models, eval=TRUE, echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+# Three Machine Algorithms were used to train on the data
+modFit_rpart <- rpart::rpart(classe ~ ., method="class",  data=pml_training_train)
+modFit_rf    <- randomForest::randomForest(classe ~ ., method="class",  data=pml_training_train)
+modFit_svm   <- e1071::svm(  classe ~ ., kernel="radial", data=pml_training_train )
+```
+
+**Make Predictions on Validation Training Data**   
+Use each of the 3 fitted models to make predictions on the Validation Training set, which we have carefully reserved for this purpose. This will be our last chance to do any kind of verification before making predictions on the test data.
+```{r Make Predictions on Validation Training Data, eval=TRUE, echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+# Now we use each of the 3 models to carry out predictions on the pml_training_validate data 
+pred_rpart <- stats::predict(modFit_rpart, newdata=pml_training_validate, type = "class" )
+pred_rf    <- stats::predict(modFit_rf,    newdata=pml_training_validate, type = "class" )
+pred_svm   <- stats::predict(modFit_svm,   newdata=pml_training_validate, type = "class" )
+```
+
+**Cross Validation with Confusion Matrix**    
+```{r Cross Validation with Confusion Matrix, eval=TRUE, echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+# Use Cross Validation to compare each prediction with the known values in validation training set
+confusion_matrix_rpart <- caret::confusionMatrix(pred_rpart, as.factor(pml_training_validate$classe))
+confusion_matrix_rf   <- caret::confusionMatrix(pred_rf,     as.factor(pml_training_validate$classe))
+confusion_matrix_svm  <- caret::confusionMatrix(pred_svm,    as.factor(pml_training_validate$classe))
+
+# Show just the tables of each confusion matrix below, and look for the one with the most agreement between Prediction and Reference (along the diagonal).
+confusion_matrix_rpart$table
+confusion_matrix_rf$table
+confusion_matrix_svm$table
+```
+
+**The Best Fitted Model was trained with Random Forest!**      
+From the output of each confusion matrix, the clear winner is the fitted model that was created by the Random Forest, a confusion_matrix_rf$table above. However, to analyze and verify this one step deeper, let's look at the overall statistics for each model so we know the true accuracy and confidence internal of the accuracy.
+```{r Confusion Matrix Overall Statistidcs, eval=TRUE, echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+confusion_matrix_rpart$overall
+confusion_matrix_rf$overall
+confusion_matrix_svm$overall
+```
+
+**Statistical Accuracy of Random Forest on the Validation Data**    
+Examining the confusion_matrix_rf$overall, overall statistics, we can see that the Random Forest machine learning algorithm is **99.7%** accurate, and we can say with **95% confidence that our accuracy is between 99.5% and 99.8% **   
+Also, we should expect  **Out of Sample Error Rate =  .003, or 0.03%**. The Support Vector Machine model wasn't far behind, and the rpart model was too low to consider.
+
+**Prediction on Test Data**   
+Now we can use the fitted model for Random Forest, to predict the classe for each of the 20 samples in the test data set.
+```{r Prediction on Test Data, echo=TRUE, message=FALSE, warning=FALSE, cache=TRUE}
+# Make final predction on testing data set
+stats::predict( modFit_rf, newdata = pml_testing, type="class")
+```
+
+**Plotting the Winning Model: Random Forest!**       
+This section gives us a visual of our winning model, which used Random Forest. It is easy to see the most important predictors on the left. **The most important predictor is roll_belt**.   
+```{r Plot Random Forest, eval=TRUE, echo=FALSE, fig.height=4.5, fig.width=10, cache=TRUE}
+randomForest::varImpPlot(modFit_rf)
+```
+
+**Plotting the complicated of Support Vector Machine SVM Classification Plot**     
+This section is to demonstrate the complexities of the Support Vector Machine SVM Classification Plot. Even though we did not choose the svm fitted model, it is worth seeing. Because of the many factors used in our model, we would need many different plots to be of any use, and that is another reason not to use SVM for this project. This is only one plot, with two predictors on x and y axis, respectively.
+```{r Plot SVM Classification, eval=TRUE, echo=FALSE, fig.height=3, fig.width=10, message=FALSE, warning=FALSE, cache=TRUE}
+plot(modFit_svm, pml_training_validate, 
+     total_accel_belt ~ total_accel_arm,
+     color.palette = terrain.colors )
+```
+
+**Plotting the Worst Model: Recursive Partitioning and Regression Trees**    
+This section gives us a visual of the worst model, Recursive Partitioning and Regression Trees, which had an accuracy of only approx 75%. If you enlarged this model, it would be possible to follow the tree downard, until arriving at the nodes on the bottom, which represent the classe(s)
+```{r Plotting Recursive Partitioning and Regression Trees, eval=TRUE, echo=FALSE, fig.height=4.5, fig.width=10, cache=TRUE}
+rattle::fancyRpartPlot(modFit_rpart)
+```
+
+
+
+
+
+
+
+
+
+
+
