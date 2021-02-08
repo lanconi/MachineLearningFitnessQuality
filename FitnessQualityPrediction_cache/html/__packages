@@ -1,0 +1,17 @@
+base
+tidyverse
+ggplot2
+tibble
+tidyr
+readr
+purrr
+dplyr
+stringr
+forcats
+lattice
+caret
+rpart
+randomForest
+e1071
+bitops
+rattle
